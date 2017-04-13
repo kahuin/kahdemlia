@@ -1,10 +1,17 @@
 # kahdemlia
 
-An asynchronous Clojure & Clojurescript implementation of the Kademlia distributed hash table.
+An asynchronous, network-agnostic Clojure & Clojurescript implementation of the Kademlia distributed
+hash table. 
 
 [![CircleCI](https://circleci.com/gh/kahuin/kahdemlia.svg?style=svg)](https://circleci.com/gh/kahuin/kahdemlia)
 
 ## Usage
+
+Add the dependency to your leinigen or boot project configuration:
+
+[![Clojars Project](https://img.shields.io/clojars/v/kahdemlia.svg)](https://clojars.org/kahdemlia)
+
+Then in your project create a node:
 
 ```clojure
 (ns kad-dht
