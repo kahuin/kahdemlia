@@ -2,3 +2,8 @@ test:
   override:
     - case $CIRCLE_NODE_INDEX in 0) lein test-clj ;; 1) lein test-cljs ;; esac:
         parallel: true
+deployment:
+  master:
+    branch: master
+    commands:
+      - lein deploy clojars
