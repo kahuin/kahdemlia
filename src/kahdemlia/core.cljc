@@ -63,7 +63,7 @@
     (if (neg? b) nil
                  b)))
 
-(defn- find-closest-ids
+(defn- find-closest-nodes
   [node source-id target-id]
   {:pre [(spec/valid? ::id source-id)
          (spec/valid? ::id target-id)]}
@@ -92,7 +92,12 @@
 (spec/def ::find-fn fn?)
 (spec/def ::ip string?)
 (spec/def ::storage map?)
+(spec/def ::contacted boolean?)
+(spec/def ::shortlist (spec/keys :req-un [::id, ::contacted]))
+(spec/def ::finding (spec/map-of ::id ::shortlist))
 (spec/def ::node (spec/keys :req-un [::id, ::network-fn, ::network-out-ch, ::find-fn, ::found-ch]))
+
+;;; Primitive operations ;;;
 
 (defn- send-msg!
   [{ch :network-out-ch id :id} dest-ip msg]
@@ -100,6 +105,7 @@
          (spec/valid? ::id id)
          (spec/valid? ::ip dest-ip)
          (spec/valid? ::msg msg)]}
+  (log/debug "Sending message" msg "to" id)
   (put! ch [dest-ip (conj id msg)]))
 
 (defmulti msg-received (fn [_ _ msg] (first msg)))
@@ -113,18 +119,27 @@
 
 (defmethod msg-received :store!
   [node [_ source-ip] [_ k v]]
-  (swap! (get-in node [:state :storage]) assoc k v)
-  (send-msg! node source-ip [:pong]))
+  (swap! (node :state) #(assoc (:storage %) k v))
+  (when source-ip (send-msg! node source-ip [:stored])))
 
-(defmethod msg-received :find-id
+(defmethod msg-received :find-node
   [node [source-id source-ip] [_ k]]
-  (send-msg! node source-ip [:ids-found k (find-closest-ids node source-id k)]))
+  (send-msg! node source-ip [:nodes-found k (find-closest-nodes node source-id k)]))
 
 (defmethod msg-received :find-value
   [node [source-id source-ip] [_ k]]
   (if-let [v (get-in @(:state node) [:storage k])]
-    (send-msg! node source-ip [:store! k v])
-    (send-msg! node source-ip [:ids-found k (find-closest-ids node source-id k)])))
+    (send-msg! node source-ip [:value-found k v])
+    (send-msg! node source-ip [:nodes-found k (find-closest-nodes node source-id k)])))
+
+(defmethod msg-received :nodes-found
+  [node [source-id source-ip] [_ k nodes]]
+  )
+
+(defmethod msg-received :value-found
+  [{:keys [state found-ch]} _ [_ k v]]
+  (swap! state update :finding #(dissoc % k))
+  (put! found-ch [k v]))
 
 (defn- update-buckets! [{:keys [id state] :as node} [source-id source-ip]]
   (when (not= id source-id)
@@ -136,6 +151,19 @@
       (doall (map #(send-msg! node (:ip %) [:ping])) old-nnas)
       (swap! state assoc-in [:buckets index] new-bucket))))
 
+;;; Iterative operations ;;;
+
+(defn- iterative-find-node
+  [node target-id]
+  (let [nodes (find-closest-nodes node (:id node) target-id)]
+    (map #(send-msg! node [:find-node]))))
+
+(defn- iterative-find-value
+  [])
+
+(defn- iterative-store
+  [])
+
 ;;; Interface ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defn- on-network [node source-ip id-and-msg]
@@ -145,8 +173,7 @@
     (update-buckets! node [source-id source-ip])
     (msg-received node [source-id source-ip] msg)))
 
-(defn- on-request [node key]
-  (log/debug "Node" (:id node) "requests key" key)
+(defn- on-find [node key]
   ((:network-fn node) nil [(:id node) :find-value key]))
 
 (defn- on-store [node key value]
@@ -174,9 +201,9 @@
            (spec/valid? ::storage storage)]
     :post [(spec/valid? ::node %)]}
    (as-> {:id             id
-          :state          (atom {:buckets [] :storage storage})
+          :state          (atom {:buckets [] :finding {} :storage storage})
           :network-out-ch (chan)
           :found-ch       (chan)} node
          (assoc node :network-fn (partial on-network node))
-         (assoc node :find-fn (partial on-request node))
+         (assoc node :find-fn (partial on-find node))
          (assoc node :store-fn (partial on-store node)))))
