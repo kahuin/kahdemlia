@@ -1,4 +1,4 @@
-# kahdemlia
+# ![K](docs/images/icon-56.png) kahdemlia
 
 An asynchronous, network-agnostic Clojure & Clojurescript implementation of the Kademlia distributed
 hash table. 
